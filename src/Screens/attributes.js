@@ -7,19 +7,19 @@ export const attributes=[
 
     {index:2,
      attr:'landmark',
-     name:'Landmark',
+     name:'Landmark*',
      maxLength:100,
      placeHolder:'Example: Near Indian Oil Building'},
 
     {index:3,
      attr:'remarks',
-     name:'Remarks',
+     name:'Remarks*',
      maxLength:200,
      placeHolder:'Example: First Place that I visited on 2022-01-01'},
      
     {index:4,
      attr:'landuseClass',
-     name:'Landuse Class',
+     name:'Landuse Class*',
      maxLength:20,
      placeHolder:'Example: Residential, Agricultural'},
 

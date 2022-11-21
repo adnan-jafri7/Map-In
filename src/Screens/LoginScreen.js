@@ -1,367 +1,142 @@
-import React,{ useState } from 'react';
+import React,{ useState,useEffect } from 'react';
+import { ImageBackground } from 'react-native';
+import * as Animatable  from 'react-native-animatable';
 import { Text, TextInput, View,StyleSheet, Alert, Image, TouchableOpacity, ActivityIndicator,Modal,Pressable } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import './global.js';
+import NetInfo  from "@react-native-community/netinfo";
+import LinearGradient from 'react-native-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import RNRestart from 'react-native-restart';
 export default function LoginScreen({route,navigation}){
     
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [modalVisibleLayer,setModalVisibleLayer]=useState(route.params);
-    const [urlTemplate,setUrlTemplate]=useState()
+    let url = global.server_url+"login.php";
+    const [mobile,setMobile]=useState('')
+    const [IsOffline,setIsOffline]=useState(false)
+    const [isLoading,setIsLoading]=useState(false)
+
+    useEffect(() => {
+      const removeNetInfoSubscription = NetInfo.addEventListener((state) => {
+        const offline = !(state.isConnected && state.isInternetReachable);
+        console.log("offline:",offline)
+        setIsOffline(offline);
+      });
+    
+    
+      return () => removeNetInfoSubscription();
+    }, []);
     
   
     const requestOptions = {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Accept': 'application/json',
+          'Content-Type': 'application/json' },
+          body:JSON.stringify({mobile:mobile})
     
   };
-  const postExample = async () => {
+  const login = async () => {
     
-    try {
-        await fetch(
-            'http://bijlee.tk/bijlee/api/login.php?mobile='+username+'&password='+password, requestOptions)
-            .then(response => {
-                response.json()
-                    .then(data => {
-                        Alert.alert("Message: ", 
-                        data.message);
-                        navigation.navigate('Map',{
-                          username:username,
-                          password:password,
-                          url:urlTemplate
-                        })
-                    });
-                    
+    try { 
+            
+       fetch(
+          url, requestOptions,100)
+          .then((response) => 
+              response.json())
+                  .then( async response => {
+                      console.log("Message: ", 
+                      response.Message);
+                      if(response.status=="Success"){
+                        await AsyncStorage.setItem("IsLoggedIn",JSON.stringify(true))
+                        await AsyncStorage.setItem("name",response.name)
+                        await AsyncStorage.setItem("email",response.email)
+                        await AsyncStorage.setItem("mobile",response.mobile)
+                        await AsyncStorage.setItem("address",response.address)
+                        await AsyncStorage.setItem("city",response.city)
+                        await AsyncStorage.setItem("state",response.state)
+                        await AsyncStorage.setItem("pincode",response.pincode)
+                        
+                        setMobile('');
+                        setIsLoading(false);
+                        RNRestart.Restart()
+                      
+                      }
+                      else{alert(response.Message)
+                        setIsLoading(false)
+                        setMobile('');
+                       }
+                     
+                  }               
+                  )
+                  .catch((error)=>{
+                    Alert.alert(error)
+                    console.log(error)
+                    setIsLoading(false)
+                    setMobile('');
+                  })
                   
-                    
-            })
-    }
-    catch (error) {
-        Alert.alert(error);
-    }
+                
+                  
+          }
+  
+  catch (error) {
+      Alert.alert("error",error);
+  }
+
+ 
+    
+   
   }
   
     return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems:"center",        
-          backgroundColor:"Transparent"               
-        }}>
-          <Image
-    source={{ uri: 'http://bijlee.tk/bijlee/img/icon_flash.png' }}
-    style={{ width: 100, height: 100 }}
-  />
-        <TextInput
-        style={[styles.textInput]}
-        onChangeText={newText => setUsername(newText)}
-        placeholder="Username"
-        returnKeyLabel = {"next"}
-        placeholderTextColor="#000000"
-        maxLength={15}
-        keyboardType="text"/>
-  
-        <TextInput
-        style={[styles.textInput]}   
-        onChangeText={newText=>setPassword(newText)}
-        placeholder="Password"
-        secureTextEntry={true}
-        placeholderTextColor="#000000"
-        maxLength={25}
-        returnKeyLabel = {"next"}
-        keyboardType="text"/>
-  
-  <TouchableOpacity
-    style={[styles.touchable]}
-  
-    onPress={() =>{if(username.length==0) {Alert.alert("Username can't be empty")}
-    else if(password.length==0){
-      Alert.alert("Password can't be empty")
-    }
-    else{
-      
-      postExample();
-      }}}>
-    <Text style={{color:'#ffffff'}}>Login</Text>
-    
-    </TouchableOpacity>
-
-    <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisibleLayer}
-        >
-        <View style={styles.centeredView}>
-        <Pressable
-            style={[styles.buttonCloseModal]}
-            onPress={() => setModalVisibleLayer(!modalVisibleLayer)}
-          >
-            <Icon
-  name='close'
-  type='evilicon'
-  color='#000000'
-  size={22}
-  
-/>
-          </Pressable>
-        <View style={styles.modalViewLayer}>
-        <View style={{flexDirection:'column',justifyContent:'center'}}>
-          
-          <Pressable
-            style={[styles.buttonLayer]}
-            onPress={() => {setModalVisibleLayer(!modalVisibleLayer);console.log(urlTemplate);navigation.navigate('Map',{
-              url:'https://bhuvan-vec1.nrsc.gov.in/bhuvan/wms?service=WMS&tiled=true&version=1.1.1&request=GetMap&layers=india3&bbox={minX},{minY},{maxX},{maxY}&width={width}&height={height}&srs=EPSG%3A900913&format=image%2Fjpeg',
-              type:'default'
-         })
-         }}
-          >
-            <Image
-        style={styles.layerImage}
-        source={require('../../assets/images/default.png')}
-      />            
-          </Pressable>
-          <Text style={styles.textStyleLayer}>Default</Text>
-          </View>
-          <View style={{flexDirection:'column',justifyContent:'center'}}>
-          
-          <Pressable
-            style={[styles.buttonLayer]}
-            onPress={() => {setModalVisibleLayer(!modalVisibleLayer);console.log(urlTemplate);navigation.navigate('Map',{
-              url:'https://bhuvan-vec1.nrsc.gov.in/bhuvan/wms?service=WMS&tiled=true&version=1.1.1&request=GetMap&layers=india3&bbox={minX},{minY},{maxX},{maxY}&width={width}&height={height}&srs=EPSG%3A900913&format=image%2Fjpeg',
-              type:'default'
-         })
-         }}
-          >
-            <Image
-        style={styles.layerImage}
-        source={require('../../assets/images/satellite.png')}
-      />            
-          </Pressable>
-          <Text style={styles.textStyleLayer}>Satellite</Text>
-          </View>
-          <View style={{flexDirection:'column',justifyContent:'center'}}>
-          
-          <Pressable
-            style={[styles.buttonLayer]}
-            onPress={() => {setModalVisibleLayer(!modalVisibleLayer);console.log(urlTemplate);navigation.navigate('Map',{
-                 url:'https://tile.openstreetmap.de/{z}/{x}/{y}.png',
-                 type:'osm'
-            })
-            }}
-          >
-            <Image
-        style={styles.layerImage}
-        source={require('../../assets/images/osm.png')}
-      />            
-          </Pressable>
-          <Text style={styles.textStyleLayer}>Open Map</Text>
-          </View>
-         
+      <LinearGradient colors={['#FF9933', '#ffffff', '#4CAF50']}>
+        {isLoading ?
+        <View style={{backgroundColor:'transparent',height:'100%',flexDirection:'column',justifyContent:'center'}}>
+          <ActivityIndicator size={70} color="#4CAF50" style={{alignSelf:'center'}} />
+          <Text style={{alignSelf:'center',color:'#000000',fontSize:20}}>Please Wait...</Text>
         </View>
-      </View>
-    </Modal>
-        
-        
-      </View>
-      
+        :
+      <View style={{flexDirection:'column',justifyContent:'space-evenly',height:'100%'}}>
+
+      <ImageBackground source={require('../../assets/images/logo.jpg')} ></ImageBackground>
+      <Animatable.Image animation="bounceIn"
+      source={require('../../assets/images/logo.jpg')}
+      style={{width:120,height:120,borderColor:'#000000',borderRadius:50,padding:10,alignSelf:'center',marginTop:50}}>
   
-      
+
+      </Animatable.Image>
+      <Animatable.View animation="bounceIn" style={{backgroundColor:'#FFFFFF',height:250,margin:20,borderRadius:20,shadowOffset: { width: 0, height: 2, }, shadowOpacity: 0.25, shadowRadius: 3.84, elevation: 5}}>
+      <Text style={{fontSize:18,color:'#000000',fontWeight:'bold',marginLeft:20,marginTop:20}}>Mobile</Text>
+      <TextInput
+          placeholderTextColor={'#000000'}
+          maxLength={10}
+          onChangeText={(e)=>{setMobile(e)}}
+          keyboardType="number-pad"
+           style={{width:'90%',height:50,borderRadius:10,margin:10,padding:10,fontSize:18,backgroundColor:'#ededed',color:'#000000',alignSelf:'center'}}></TextInput>
+        <TouchableOpacity
+          onPress={()=>{console.log("mobile",mobile); if(mobile.length!=10){Alert.alert("Invalid Mobile No!")}
+                        else{
+                          if(IsOffline){Alert.alert("No Internet Connection!")}
+                          else{ setIsLoading(true); login()}}}}
+         style={{backgroundColor:'#4CAF50',width:'80%',alignSelf:'center',height:50,borderRadius:10,flexDirection:'column',justifyContent:'center'}}>
+         
+          <Text style={{fontSize:18,color:'#ffffff',fontWeight:'bold',textAlign:'center'}}>Login</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          onPress={() => {navigation.navigate("RegisterScreen")}}
+          style={{marginTop:20}}>
+        <Text style={{color:'#4CAF50',fontSize:18,textAlign:'center'}}>Don't have an account? Register Now</Text>
+        </TouchableOpacity>
+      </Animatable.View>
+
+      <Animatable.View animation="bounceIn" style={{flexDirection:'column', justifyContent:'flex-end'}}>
+        <Text style={{color:'#ffffff',fontSize:18,textAlign:'center',padding:10}}></Text>
+        <Image 
+      style={{width:100,height:100,borderRadius:50,alignSelf:'center',padding:20}}/>
+      </Animatable.View>
+
+      </View>}
+      </LinearGradient>
+     
       
     )
-   
-   
-  }
-
-  const styles= StyleSheet.create({
-    
-    textInput:{
-      height: 40,
-      width:350,
-      margin: 12,
-      borderWidth: 1,
-      padding: 10,
-      borderRadius:10,
-      backgroundColor:"white",
-      color:"black"
-    },
-    touchable:{
-      width: 350,
-      height:40,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: '#4CAF50',
-      margin:10,
-      borderRadius:10
-  
-    },
-    textInput:{
-      height: 40,
-      width:100,
-      margin: 12,
-      borderWidth: 1,
-      padding: 10,
-      borderRadius:10,
-      fontSize:16,
-      backgroundColor:"white",
-      color:"black"
-    },
-    touchable:{
-      width: 350,
-      height:40,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: '#4CAF50',
-      margin:10,
-      borderRadius:10
-  
-    },
-    map: {
-        width: '100%',
-        height: '120%',
-        marginTop:'50%'
-
-       },
-       centeredView: {
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-        marginTop: 22,
-      },
-      modalView: {
-        backgroundColor: "white",
-        borderRadius: 20,
-        padding: 5,
-        flexDirection:'column',
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: {
-          width: 0,
-          height: 2
-        },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 5
-      },
-      button: {
-        borderRadius: 20,
-        padding: 10,
-        width:200,
-        elevation: 2,
-        margin:10,
-      },
-      buttonOpen: {
-        backgroundColor: "#F194FF",
-      },
-      buttonClose: {
-        backgroundColor: "#4CAF50",
-        flexDirection:'column',
-        justifyContent:'center'
-      },
-      textStyle: {
-        color: "white",
-        fontWeight: "bold",
-        textAlign: "center",
-        fontSize:20
-      },
-      modalText: {
-        marginBottom: 15,
-        textAlign: "center",
-        fontSize:20
-      },
-      buttonCloseModal:{
-        backgroundColor:'#ffffff',
-        borderRadius:10,
-        shadowOffset: {
-          width: 0,
-          height: 2
-        },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 5,
-        padding:5
-      },
-      modalViewLayer: {
-        backgroundColor: "white",
-        borderRadius: 20,
-        padding: 35,
-        flexDirection:'row',
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: {
-          width: 0,
-          height: 2
-        },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 5
-      },
-      layerImage:{
-        width:70,
-        height:70,
-        borderWidth:1,
-        borderRadius: 10,
-        borderColor:'#000000',
-        elevation: 2,
-        margin:12,
-      },
-      textStyleLayer: {
-        color: "#000000",
-        fontWeight: "bold",
-        textAlign: "center",
-        fontSize:16
-      },
-      buttonSave:{
-        borderRadius: 20,
-        padding: 10,
-        width:100,
-        elevation: 2,
-        margin:10,
-        backgroundColor: "#4CAF50",
-        flexDirection:'column',
-        justifyContent:'center'
-
-      },
-      buttonReset:{
-        borderRadius: 20,
-        padding: 10,
-        width:100,
-        elevation: 2,
-        color:'#4CAF50',
-        margin:10,
-        backgroundColor: "#ffffff",
-        flexDirection:'column',
-        justifyContent:'center',
-        borderColor:'4CAF50',
-      },
-      buttonServer:{
-        width:'auto'
-      },
-      centeredViewSave: {
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-      
-      },
-      textInput:{
-        height: 40,
-        width:300,        
-        borderWidth: 1,
-        padding: 10,
-        fontSize:16,
-        borderRadius:10,
-        backgroundColor:"white",
-        color:"black"
-      },
-      fieldText: {
-        textAlign: "left",
-        fontSize:20,
-        color:'#000000'
-      },
-      textInputView:{
-        padding:5
-      }
-  
-   
-  });
-
-  
+}

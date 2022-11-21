@@ -1,19 +1,45 @@
 import React,{ useEffect, useState } from 'react';
-import { Text,RefreshControl, TextInput,Button, View,StyleSheet, Alert, Image, TouchableOpacity, ActivityIndicator,Dimensions,Modal,ScrollView,PermissionsAndroid} from 'react-native';
+import { Text,RefreshControl, TextInput,Button, View,StyleSheet, Alert, Image, TouchableOpacity,BackHandler, ActivityIndicator,Dimensions,Modal,ScrollView,PermissionsAndroid} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MapView,{ MAP_TYPES, PROVIDER_DEFAULT, UrlTile,Marker,MapUrlTile, WMSTile, Polygon, Polyline} from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {attributes} from './attributes';
 import {launchCamera, launchImageLibrary} from 'react-native-image-picker';
 import { openDatabase } from 'react-native-sqlite-storage';
-
+import RNLocation from 'react-native-location';
+import ImgToBase64 from 'react-native-image-base64';
+import RNAndroidLocationEnabler from 'react-native-android-location-enabler';
+import FormScreen from './FormScreen'
+import { NavigationContainer } from '@react-navigation/native';
+import { Tab } from '@rneui/base';
 
 
 export default function MapScreen({route,navigation}){
+  RNAndroidLocationEnabler.promptForEnableLocationIfNeeded({
+    interval: 10000,
+    fastInterval: 5000,
+  })
+    .then((data) => {
+      // The user has accepted to enable the location services
+      // data can be :
+      //  - "already-enabled" if the location services has been already enabled
+      //  - "enabled" if user has clicked on OK button in the popup
+    })
+    .catch((err) => {
+      // The user has not accepted to enable the location services or something went wrong during the process
+      // "err" : { "code" : "ERR00|ERR01|ERR02|ERR03", "message" : "message"}
+      // codes :
+      //  - ERR00 : The user has clicked on Cancel button in the popup
+      //  - ERR01 : If the Settings change are unavailable
+      //  - ERR02 : If the popup has failed to open
+      //  - ERR03 : Internal error
+    });
   
     const{url,type}=route.params;
-    console.log(url,type)
+    //console.log(url,type)
     const { width, height } = Dimensions.get('window');
     const [modalVisible, setModalVisible] = useState(false);
     const [modalVisibleLayer,setModalVisibleLayer]=useState(false);
@@ -29,181 +55,92 @@ export default function MapScreen({route,navigation}){
     const [drawLine,setDrawLine]=useState(false)
     const [showLine,setShowLine]=useState(false)
     const [zoomLevel,setZoomLevel]=useState(0);
-    let [imagePath,setImagePath]=useState('')
+    let [imagePath,setImagePath]=useState([])
     const [shapeType,setShapeType]=useState('')
+    let position=0
+    let image1=''
+    let image2=''
+   
+      let placeName=""
+      let landmark=undefined
+      let remarks=undefined
+      let landuseClass=undefined
+      let shapeLocations=""
+      let today = ""
+      let date = ""
+    
     const db=openDatabase({name:'mapapp.db',location:'default'},
     function () {
-      console.log('Success');
+      console.log('DB Connection Success');
       },
       error=>{console.log('Error',error)}
            
       );
 
+     
 
-    const createTable=async ()=>{
-      db.transaction((tx)=>{
-        tx.executeSql(
-          "CREATE TABLE `mapdb` ( `userName` VARCHAR(20) NULL , `placeName` VARCHAR(50) NULL , `remarks` VARCHAR(200) NULL , `landmark` VARCHAR(100) NULL , `landuseClass` VARCHAR(20) NULL , `dateTime` VARCHAR(50) NULL , `locations` VARCHAR(1000) NULL , `shapeType` VARCHAR(10) NULL );"
-        )
-      },
-      error=>{console.log('Error:',error)}),
-      success=>{console.log('Success:',success)}
-    }  
-    let inputFields=[];
-    const handleFormChange = (index,text,attr) => {
-      //console.log('index',index,'value',event.target.name)
-      let data = [...inputFields];
-      
-    data[index]= {attr:attr,text:text,index:index}
-       inputFields=data
-       console.log(inputFields)
-    }
-
-    
-    console.log(urlTemplate,type)
-    
-
-    const saveData = async () => {
-      try {
-        console.log('saveData')
-        console.log(shapeType)
-        await AsyncStorage.setItem(
-          'inputFields',
-          JSON.stringify(inputFields[1].text),
-          )
-          await AsyncStorage.setItem(
-            'shapeType',
-          shapeType
-        );
-    
-        retrieveData();
-      } catch (error) {
-        console.log(error)
-      }
-    };
-
-    const insertData = async () =>{
-      let placeName=inputFields[1].text
-      let landmark=inputFields[2].text
-      let remarks=inputFields[3].text
-      let landuseClass=inputFields[4].text
-      let shapeLocations=JSON.stringify(locations)
-      let today = new Date();
-      let date = today.getFullYear()+'-'+(today.getMonth()+1)+'-'+today.getDate()
-      console.log("Place Name",placeName,"landmark",landmark,"remarks",remarks,"landuseClass",landuseClass,"shapeLocation",shapeLocations,"date",date)
-
-      try{
-        await db.transaction( async (tx)=>{
-       await tx.executeSql("INSERT INTO mapdb ('username','placeName','remarks','landmark','landuseClass','dateTime','locations','shapeType') VALUES ('adnan.jafri7','"+placeName+"','"+remarks+"','"+landmark+"','"+landuseClass+"','"+date+"','"+shapeLocations+"','"+shapeType+"');");
-      },
-      error=>{console.log('Error:',error)},
-      success=>{console.log('Success:',success)})
-        
-      }
-      catch (error) {
-        console.log(error)
-      }
-    };
-
-    const getData=async ()=>{
-      try{
-        db.transaction((tx)=>{
-          tx.executeSql("SELECT * FROM mapdb",
-          [],
-          (tx,results)=>{
-            var len=results.rows.length;
-            console.log("Rows:",len)
-            for(let i=0;i<len;i++){
-            console.log("Row:",i," ",results.rows.item(i))
-            
-            }
-          })
+      const getLocation = () => {
+        RNLocation.configure({
+          distanceFilter: 3.0,
+          desiredAccuracy: {
+            ios: "best",
+            android: "highAccuracy"
+          },
+          // Android only
+          androidProvider: "auto",
+          interval: 10000, // Milliseconds
+          fastestInterval: 10000, // Milliseconds
+          maxWaitTime: 10000, // Milliseconds
+          // iOS Only
+          activityType: "other",
+          allowsBackgroundLocationUpdates: false,
+          pausesLocationUpdatesAutomatically: true,
+          showsBackgroundLocationIndicator: false,
         })
-      }
-      catch (error) {
-        console.log(error)
-      }
-    }
-  
-    const validation=()=>{
-      if(inputFields.length>4){
-        if(inputFields[1].text.length>0 && inputFields[2].text.length>0 && inputFields[3].text.length>0 && inputFields[4].text.length>0){
-          createTable();insertData();getData();setModalVisibleSave(!modalVisibleSave)}
-          else{
-      Alert.alert("All Fields are required.")
-    }}
-    else{
-      Alert.alert("All Fields are required.")
-    }
-      
-    }
-    const retrieveData = async () => {
-      try {
-        console.log('retrievData')
-        const value = await AsyncStorage.getItem('inputFields');
-        const value2 =await AsyncStorage.getItem('shapeType')
-        if (value !== null) {
-          // We have data!!
-          console.log(value,value2)
-          Alert.alert(value,value2)
-        }
-        else{
-          Alert.alert("data not found")
-        }
-      } catch (error) {
-        // Error retrieving data
-      }
-    };
-
-  const sendData =async ()=>{
-    console.log(inputFields[1])
-            if(inputFields[1]===undefined){
-              Alert.alert("Invalid Place Name")
-            }
-            else if(inputFields[1].text===""){
-              Alert.alert("Invalid Place Name")
-            }
-            else{
-            setModalVisibleSave(!modalVisibleSave);
-            saveData()
+         
+        RNLocation.requestPermission({
+          ios: "whenInUse",
+          android: {
+            detail: "fine"
           }
-  };
+        }).then(granted => {
+            if (granted) {   
+              //console.log('callin _startUpdatingLocation') ;      
+              _startUpdatingLocation();       
+            }
+          });
+      };
+
+      
+
+
+       
+    
+  
+
+  
     
     
     let index=0
 
-    const requestCameraPermission = async () => {
+   
+
+    const requestLocationPermission = async () => {
       try {
         const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.CAMERA,
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           {
-            title: "App Camera Permission",
-            message:"App needs access to your camera ",
-            buttonNeutral: "Ask Me Later",
-            buttonNegative: "Cancel",
+            title: "App Location Permission",
+            message:"App needs access to your location ",
             buttonPositive: "OK"
           }
         );
         if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-          console.log("Camera permission given");
-          let options = {
-            storageOptions: {
-              skipBackup: true,
-              path: 'images',
-            }}
-          launchCamera(options,(response) => {
-            console.log('Response = ', response);
-            console.log('response', JSON.stringify(response));
-            let res=(response.assets)
-            console.log('image path',(res[0].uri))
-            setImagePath(res[0].uri)
-           
-          })
-            
-            
-            console.log('image path',ImagePath)
+          console.log("Location permission given");
+          
+          
         } else {
-          console.log("Camera permission denied");
+          Alert.alert("You have denied the permission. App needs the location permission to work.")
         }
       } catch (err) {
         console.warn(err);
@@ -230,6 +167,8 @@ const LONGITUDE_DELTA = 30;
     
     
     return (
+      
+      
       <View
         style={{
           flex: 1,
@@ -237,6 +176,9 @@ const LONGITUDE_DELTA = 30;
           alignItems:"center",        
           backgroundColor:"Transparent"               
         }}>
+
+          
+        
           <MapView
           
       region={{
@@ -247,7 +189,8 @@ const LONGITUDE_DELTA = 30;
       }}
         provider={undefined}
         mapType={"none"}
-        onMapLoaded={()=>{setShowButton(true)}}
+        
+        onMapLoaded={()=>{setShowButton(true); requestLocationPermission();}}
         showsUserLocation={true}
         style={[styles.map]}
         showsTraffic={false}
@@ -268,31 +211,31 @@ const LONGITUDE_DELTA = 30;
           let ad=(e.nativeEvent.coordinate)
           let latitude=(ad.latitude)
           let longitude=(ad.longitude)          
-         setLocations([...locations,{latitude:latitude,longitude:longitude,location:loc}])
+         setLocations([...locations,{latitude:latitude,longitude:longitude}])
          loc++
-         console.log(locations.length);         
+        // console.log(locations.length);         
          setShowPolygon(true)
          setShapeType('Polygon')}
 
          if(drawPoint){
-          console.log(locations)
+          //console.log(locations)
           let ad=(e.nativeEvent.coordinate)
           let latitude=(ad.latitude)
           let longitude=(ad.longitude)          
-         setLocations([...locations,{latitude:latitude,longitude:longitude,location:loc}])
+         setLocations([{latitude:latitude,longitude:longitude}])
          loc++
-         console.log(locations.length);         
+         //console.log(locations.length);         
          setShowPoint(true)
          setShapeType('Point')}
 
          if(drawLine){
-          console.log(locations)
+          //console.log(locations)
           let ad=(e.nativeEvent.coordinate)
           let latitude=(ad.latitude)
           let longitude=(ad.longitude)          
-         setLocations([...locations,{latitude:latitude,longitude:longitude,location:loc}])
+         setLocations([...locations,{latitude:latitude,longitude:longitude}])
          loc++
-         console.log(locations.length);         
+        // console.log(locations.length);         
          setShowLine(true)
          setShapeType('Line')}
 
@@ -309,6 +252,7 @@ const LONGITUDE_DELTA = 30;
 urlTemplate={url}
 zIndex={1}
 epsgSpec={"EPSG:900913"}
+
 />
 :null}
 
@@ -326,8 +270,6 @@ epsgSpec={"EPSG:4326"}
 //urlTemplate="https://bhuvan-vec1.nrsc.gov.in/bhuvan/wms?service=WMS&tiled=false&version=1.1.0&request=GetMap&layers=india3&bbox=60,6.0,97,39&width=256&height=256&srs=EPSG%3A4326&format=image%2Fjpeg"
 //urlTemplate="https://bhuvan-vec1.nrsc.gov.in/bhuvan/wms?service=WMS&tiled=true&version=1.1.1&request=GetMap&layers=india3&bbox={minX},{minY},{maxX},{maxY}&width={width}&height={height}&srs=EPSG%3A900913&format=image%2Fjpeg"
 urlTemplate={url}
-zIndex={1}
-epsgSpec={"EPSG:900913"}
 />
 :null}
 
@@ -404,7 +346,7 @@ locations.map(marker=>(
     </View>
     : null}
     <Modal
-        animationType="slide"
+        animationType="fade"
         transparent={true}
         visible={modalVisible}
         onRequestClose={() => {
@@ -474,7 +416,7 @@ locations.map(marker=>(
           
           <TouchableOpacity
             style={[styles.buttonLayer]}
-            onPress={() => {setModalVisibleLayer(!modalVisibleLayer);console.log(urlTemplate);navigation.navigate('Map',{
+            onPress={() => {setModalVisibleLayer(!modalVisibleLayer);navigation.navigate('Map',{
               url:'https://bhuvan-vec1.nrsc.gov.in/bhuvan/wms?service=WMS&tiled=true&version=1.1.1&request=GetMap&layers=india3&bbox={minX},{minY},{maxX},{maxY}&width={width}&height={height}&srs=EPSG%3A900913&format=image%2Fjpeg',
               type:'default'
          })
@@ -485,14 +427,15 @@ locations.map(marker=>(
         source={require('../../assets/images/default.png')}
       />            
           </TouchableOpacity>
-          <Text style={styles.textStyleLayer}>Default</Text>
+          <Text style={styles.textStyleLayer}>Bhuvan</Text>
           </View>
           <View style={{flexDirection:'column',justifyContent:'center'}}>
           
           <TouchableOpacity
             style={[styles.buttonLayer]}
-            onPress={() => {setModalVisibleLayer(!modalVisibleLayer);console.log(urlTemplate);navigation.navigate('Map',{
-              url:'https://basemaps.arcgis.com/arcgis/rest/services/World_Basemap_v2/VectorTileServer/tile/15/13663/23413',
+            onPress={() => {setModalVisibleLayer(!modalVisibleLayer);navigation.navigate('Map',{
+              url:'https://a.tiles.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}.jpg?access_token=pk.eyJ1Ijoib3BlbnN0cmVldG1hcCIsImEiOiJja2w5YWt5bnYwNjZmMnFwZjhtbHk1MnA1In0.eq2aumBK6JuRoIuBMm6Gew',
+              //url:'https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{x}/{y}',
               //url:'https://bhuvan-ras1.nrsc.gov.in/tilecache/tilecache.py?service=WMS&tiled=true&version=1.0.0&request=GetMap&layers=Bhuvan_Lite_Sat_V2&bbox={minX},{minY},{maxX},{maxY}&width={width}&height={height}&srs=EPSG%3A900913&format=image%2Fpng',
               type:'satellite',
               
@@ -510,7 +453,7 @@ locations.map(marker=>(
           
           <TouchableOpacity
             style={[styles.buttonLayer]}
-            onPress={() => {setModalVisibleLayer(!modalVisibleLayer);console.log(urlTemplate);navigation.navigate('Map',{
+            onPress={() => {setModalVisibleLayer(!modalVisibleLayer);navigation.navigate('Map',{
               url:'https://tile.openstreetmap.de/{z}/{x}/{y}.png',
               type:'osm'
          })
@@ -521,7 +464,7 @@ locations.map(marker=>(
         source={require('../../assets/images/osm.png')}
       />            
           </TouchableOpacity>
-          <Text style={styles.textStyleLayer}>Open Map</Text>
+          <Text style={styles.textStyleLayer}>OSM</Text>
           </View>
          
         </View>
@@ -537,7 +480,7 @@ locations.map(marker=>(
             style={{
             position: 'absolute',//use absolute position to show button on top of the map
             top:'80%',
-            padding:12,
+            
             alignSelf: 'center', //for align to center
             flexDirection:'row',
             backgroundColor:'#ffffff',
@@ -563,7 +506,8 @@ locations.map(marker=>(
           <TouchableOpacity
 
           style={[styles.buttonSave]}
-          onPress={() => {if(locations.length<3){Alert.alert("Please mark at least 3 points.")}else{setModalVisibleSave(true)}}}
+          //onPress={() => {if(locations.length<3){Alert.alert("Please mark at least 3 points.")}else{setModalVisibleSave(true)}}}
+          onPress={()=>{if(locations.length<3){Alert.alert("Please mark at least 3 points.")}else{navigation.navigate('FormScreen',{locations:locations,shapeType:shapeType})}}}
           >
           <Text style={[styles.textStyle]}>Save</Text>
           </TouchableOpacity>
@@ -598,7 +542,7 @@ locations.map(marker=>(
             style={{
             position: 'absolute',//use absolute position to show button on top of the map
             top:'80%',
-            padding:12,
+            
             alignSelf: 'center', //for align to center
             flexDirection:'row',
             backgroundColor:'#ffffff',
@@ -624,7 +568,7 @@ locations.map(marker=>(
           <TouchableOpacity
 
           style={[styles.buttonSave]}
-          onPress={() => {if(locations.length<1){Alert.alert("Please mark at least 1 point.")}else{setModalVisibleSave(true)}}}
+          onPress={() => {if(locations.length<1){Alert.alert("Please mark at least 1 point.")}else{navigation.navigate('FormScreen',{locations:locations,shapeType:shapeType})}}}
           >
           <Text style={[styles.textStyle]}>Save</Text>
           </TouchableOpacity>
@@ -648,7 +592,7 @@ locations.map(marker=>(
             elevation: 5
             
         }}>
-          <Text style={[styles.textStyle,{color:'#4CAF50'}]}>Mark the Points</Text>
+          <Text style={[styles.textStyle,{color:'#4CAF50'}]}>Mark the Point</Text>
          
       </View>
       : null}
@@ -659,7 +603,6 @@ locations.map(marker=>(
             style={{
             position: 'absolute',//use absolute position to show button on top of the map
             top:'80%',
-            padding:12,
             alignSelf: 'center', //for align to center
             flexDirection:'row',
             backgroundColor:'#ffffff',
@@ -685,7 +628,7 @@ locations.map(marker=>(
           <TouchableOpacity
 
           style={[styles.buttonSave]}
-          onPress={() => {if(locations.length<2){Alert.alert("Please mark at least 2 points.")}else{setModalVisibleSave(true)}}}
+          onPress={() => {if(locations.length<2){Alert.alert("Please mark at least 2 points.")}else{navigation.navigate('FormScreen',{locations:locations,shapeType:shapeType})}}}
           >
           <Text style={[styles.textStyle]}>Save</Text>
           </TouchableOpacity>
@@ -709,7 +652,7 @@ locations.map(marker=>(
             elevation: 5
             
         }}>
-          <Text style={[styles.textStyle,{color:'#4CAF50'}]}>Draw the Lines</Text>
+          <Text style={[styles.textStyle,{color:'#4CAF50'}]}>Draw the Line</Text>
          
       </View>
       : null}
@@ -721,14 +664,11 @@ locations.map(marker=>(
         animationType="slide"
         transparent={true}
         visible={modalVisibleSave}
-        onRequestClose={() => {
-          
-          setModalVisibleSave(!modalVisibleSave);
-        }}>
+        >
         <View style={styles.centeredViewSave}>
         <TouchableOpacity
             style={[styles.buttonCloseModal]}
-            onPress={() => setModalVisibleSave(!modalVisibleSave)}
+            onPress={() => {setModalVisibleSave(!modalVisibleSave);setImagePath([]);inputFields=[]}}
           >
             <Icon
   name='close'
@@ -741,13 +681,78 @@ locations.map(marker=>(
         <View style={styles.modalView}>
           
         
-          <Text style={styles.modalText}>Fill the Details</Text>
+          <Text style={styles.modalText}>Capture Photos</Text>
            
           <ScrollView key={Math.random()} style={styles.textInputView}>
+          <View style={[styles.points,styles.card,{ flexDirection:'row',alignSelf:'center'}]}>
+        
+        <TouchableOpacity 
+        onPress={() => {
+          getLocation();
+          if(imagePath.length==2){
+            alert("Maximum 2 photos can be uploaded at a time.")
+          }
+          else if(gpsloc.accvalue==undefined || gpsloc.accvalue==0 || gpsloc.accvalue>1000){
+          alert("Accuracy of GPS is "+gpsloc.accvalue+"m. Please wait sometime for accuracy to improve. Ensure you are under open sky!")
+        }
+        else{ Alert.alert("Capture Photo","Capturing photo with accuracy "+gpsloc.accvalue+ ' m',
+        [{ text: 'OK', onPress: () => {                      
+          requestCameraPermission()
+        }}])}
+      }}
+        style={[styles.card,styles.points,{alignItems:'flex-start',flexDirection:'row',width:'auto',height:'auto'}]}>
+          
+              <Icon 
+              name='camera-outline'
+              type='evilicon'
+              color='#4CAF50'
+              size={22}
+              
+            />
+            <Text style={{alignSelf:'center',paddingLeft:8,color:'#4CAF50',fontWeight: "bold"}}>Capture</Text>
+            
+        </TouchableOpacity>
+        {console.log("Image Path")}
+        {imagePath.map(({path})=>(
+          <View key={index++} style={{flexDirection:'row'}}>
+        <Image  style={{borderWidth:1,borderColor:'#000000',width:50,height:50,marginLeft:8,alignSelf:'center'}}
+        
+        source={{uri:`data:image/jpeg;base64,${path}`}}></Image>
+        <TouchableOpacity
+        onPress={(e) =>{console.log("Length before",imagePath.length)
+                        
+                      position=path.indexOf(e.target.value)
+                        console.log("Path",position)
+                      imagePath.splice(position,1)
+                        //console.log(imagePath)
+                        console.log("Length after",imagePath.length)
+                        if(imagePath.length>=1){
+                      setImagePath([{path:path}])
+                      console.log("Length after",imagePath.length)}
+                    else{setImagePath([])}
+                    console.log("Length after",imagePath.length)}
+                    
+        }
+        >
+        <Icon 
+              name='close'
+              type='evilicon'
+              color='#FF0000'
+              size={22}
+              
+            />
+        </TouchableOpacity>
+        </View>
+        ))}
+        
+      </View>
+
+     
+
+      <Text style={styles.modalText}>Fill the details</Text>
           {attributes.map(({attr,placeHolder,name,maxLength,index})=>(
-            <View key={Math.random()} style={styles.textInputView}>
+            <View  key={Math.random()} style={[styles.textInputView]}>
             <Text style={styles.fieldText}>{name}</Text>
-            {console.log(placeHolder)}
             <TextInput key={index}  style={[styles.textInput]}
         placeholder={placeHolder}
         returnKeyLabel = {"next"}
@@ -764,35 +769,14 @@ locations.map(marker=>(
         <View style={[styles.points,styles.card,{alignItems:'center'}]}>
           {locations.map(value=>(
             <View key={index++} style={{flexDirection:'row',padding:3}}>
-              <Text style={{color:'#4CAF50',fontSize:13,}}>Point {index}: </Text>
+              <Text style={{color:'#4CAF50',fontSize:13,}}>Point : </Text>
               <Text style={{color:'#4CAF50',fontSize:13}}>{value.latitude}, </Text>
               <Text style={{color:'#4CAF50',fontSize:13}}>{value.longitude}</Text> 
            </View>
           ))}
         </View>
 
-        <View style={[{width:'auto',height:'auto', flexDirection:'row', alignSelf:'flex-start',marginLeft:10}]}>
         
-          <TouchableOpacity 
-          onPress={() => requestCameraPermission()}
-          style={[styles.card,styles.points,{alignItems:'flex-start',flexDirection:'row',width:'auto',height:'auto'}]}>
-            
-                <Icon 
-                name='camera-outline'
-                type='evilicon'
-                color='#4CAF50'
-                size={22}
-                
-              />
-              <Text style={{alignSelf:'center',paddingLeft:8,color:'#4CAF50',fontWeight: "bold"}}>Capture</Text>
-              
-          </TouchableOpacity>
-          <Image style={{borderWidth:1,borderColor:'#000000',width:50,height:50,marginLeft:8,alignSelf:'center'}}
-          
-          source={{uri:imagePath}}></Image>
-          {console.log('image',imagePath)}
-          
-        </View>
         
         </ScrollView>
           
@@ -811,17 +795,17 @@ locations.map(marker=>(
          <TouchableOpacity
 
           style={[styles.buttonReset,styles.buttonServer]}
-          onPress={() =>{validation()}}>
+          onPress={() =>{ sendToServer()
+            
+          }}>
           <Text style={[styles.textStyle,{color:'#4CAF50'}]}>Save to Device</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
 
           style={[styles.buttonSave,styles.buttonServer]}
-          onPress={() => {
-            validation()
-           
-          }}
+          onPress={() => {sendToServer()}
+            }
           >
           <Text style={[styles.textStyle]}>Send To Server</Text>
           </TouchableOpacity>
@@ -837,6 +821,8 @@ locations.map(marker=>(
 
     </View>
 : null}
+
+
 
 
 
@@ -874,6 +860,7 @@ locations.map(marker=>(
         justifyContent: "center",
         alignItems: "center",
         marginTop: 22,
+        backgroundColor:'rgba(0, 0, 0, 0.5)'
       },
       modalView: {
         backgroundColor: "white",
@@ -963,7 +950,7 @@ locations.map(marker=>(
         padding: 10,
         width:100,
         elevation: 2,
-        margin:10,
+        margin:5,
         backgroundColor: "#4CAF50",
         flexDirection:'column',
         justifyContent:'center'
@@ -975,7 +962,7 @@ locations.map(marker=>(
         width:100,
         elevation: 2,
         color:'#4CAF50',
-        margin:10,
+        margin:5,
         backgroundColor: "#ffffff",
         flexDirection:'column',
         justifyContent:'center',
